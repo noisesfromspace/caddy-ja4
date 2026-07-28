@@ -16,6 +16,10 @@ import (
 	"go.uber.org/zap"
 )
 
+func init() {
+	caddy.RegisterModule(new(Handler))
+}
+
 // Handler injects the JA4 (client TLS) fingerprint into request/response metadata so it can
 // be consumed by other handlers (for example, to pass it upstream or log it).
 type Handler struct {
