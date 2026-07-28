@@ -8,51 +8,42 @@ import (
 // ErrUnavailable signals that the JA4 fingerprint could not be computed.
 var ErrUnavailable = errors.New("ja4 fingerprint unavailable")
 
-// fingerprintCache stores JA4 fingerprints keyed by connection remote address.
-// This allows us to look up fingerprints without needing to unwrap TLS connections.
+// globalCache stores JA4 fingerprints keyed by connection remote address.
+// It is populated by the TLS HandshakeContext callback and read by the HTTP handler.
+var globalCache = &fingerprintCache{
+	cache: make(map[string]string),
+}
+
 type fingerprintCache struct {
 	mu    sync.RWMutex
 	cache map[string]string
 }
 
-func newFingerprintCache() *fingerprintCache {
-	return &fingerprintCache{
-		cache: make(map[string]string),
-	}
-}
-
-func (fc *fingerprintCache) Set(addr string, fingerprint string) {
-	fc.mu.Lock()
-	defer fc.mu.Unlock()
-	fc.cache[addr] = fingerprint
-}
-
-func (fc *fingerprintCache) Get(addr string) (string, bool) {
+func (fc *fingerprintCache) get(addr string) (string, bool) {
 	fc.mu.RLock()
 	defer fc.mu.RUnlock()
 	fp, ok := fc.cache[addr]
 	return fp, ok
 }
 
-func (fc *fingerprintCache) Clear(addr string) {
+func (fc *fingerprintCache) set(addr string, fingerprint string) {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
-	delete(fc.cache, addr)
+	fc.cache[addr] = fingerprint
 }
 
-// globalCache is set by the listener wrapper and used by the handler
-var globalCache *fingerprintCache
+// cacheSet stores a JA4 fingerprint in the global cache.
+// Called from the HandshakeContext callback.
+func cacheSet(addr, fingerprint string) {
+	globalCache.set(addr, fingerprint)
+}
 
-// GetFingerprintFromCache retrieves a JA4 fingerprint from the cache by connection address.
-// This is used by the handler to look up fingerprints without needing to unwrap TLS connections.
+// GetFingerprintFromCache retrieves a JA4 fingerprint from the global cache
+// by connection address. Used by the HTTP handler.
 func GetFingerprintFromCache(addr string) (string, error) {
-	if globalCache == nil {
-		return "", ErrUnavailable
-	}
-	fp, ok := globalCache.Get(addr)
+	fp, ok := globalCache.get(addr)
 	if !ok {
 		return "", ErrUnavailable
 	}
 	return fp, nil
 }
-

@@ -1,6 +1,7 @@
 package ja4
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -95,6 +96,22 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			zap.Int("blocked_count", count),
 			zap.Bool("watching_file", h.WatchBlockFile && h.BlockFile != ""),
 		)
+	}
+
+	// Inject the JA4 HandshakeContext module into all TLS connection policies
+	// so ja4plus.JA4() runs during every TLS handshake.
+	if srvIface := ctx.Context.Value(caddyhttp.ServerCtxKey); srvIface != nil {
+		if srv, ok := srvIface.(*caddyhttp.Server); ok {
+			hcJSON, err := json.Marshal(map[string]any{"module": "ja4"})
+			if err != nil {
+				return fmt.Errorf("failed to marshal handshake context config: %w", err)
+			}
+			for _, cp := range srv.TLSConnPolicies {
+				if cp.HandshakeContextRaw == nil {
+					cp.HandshakeContextRaw = hcJSON
+				}
+			}
+		}
 	}
 
 	return nil
